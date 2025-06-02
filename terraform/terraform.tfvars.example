@@ -1,0 +1,6 @@
+# Copy this file to terraform.tfvars and fill in your values
+# Get your billing account ID with: gcloud billing accounts list
+
+billing_account_id = "YOUR_BILLING_ACCOUNT_ID"
+project_name       = "notes-api"
+region            = "us-central1"

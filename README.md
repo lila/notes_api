@@ -137,6 +137,38 @@ dart test
 
 ### Google Cloud Setup
 
+#### Option 1: Terraform (Recommended)
+
+Use Terraform to automatically set up your Google Cloud infrastructure:
+
+1. **Navigate to terraform directory**
+   ```bash
+   cd terraform
+   ```
+
+2. **Configure variables**
+   ```bash
+   cp terraform.tfvars.example terraform.tfvars
+   # Edit terraform.tfvars with your billing account ID
+   ```
+
+3. **Deploy infrastructure**
+   ```bash
+   terraform init
+   terraform plan
+   terraform apply
+   ```
+
+4. **Update your .env file**
+   ```bash
+   # Copy the project_id from Terraform output
+   echo "GOOGLE_CLOUD_PROJECT_ID=<project_id>" >> .env
+   ```
+
+For detailed instructions, see [`TERRAFORM_FIRESTORE_SETUP.md`](TERRAFORM_FIRESTORE_SETUP.md).
+
+#### Option 2: Manual Setup
+
 1. **Enable Firestore**
    ```bash
    gcloud firestore databases create --region=us-central1
@@ -220,10 +252,15 @@ notes_api/
 │   ├── utils/
 │   │   └── response_utils.dart  # HTTP response helpers
 │   └── notes_api.dart           # Library exports
+├── terraform/
+│   ├── main.tf                  # Terraform configuration
+│   ├── terraform.tfvars.example # Terraform variables template
+│   └── README.md                # Terraform setup instructions
 ├── test/
 │   └── notes_api_test.dart      # Unit tests
 ├── Dockerfile                   # Container configuration
 ├── .env.example                 # Environment variables template
+├── TERRAFORM_FIRESTORE_SETUP.md # Detailed Terraform guide
 └── ARCHITECTURE.md              # Detailed architecture documentation
 ```
 
