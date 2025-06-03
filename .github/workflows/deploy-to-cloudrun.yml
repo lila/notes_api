@@ -1,0 +1,155 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+    types: [ closed ]
+
+env:
+  GCP_REGION: us-central1
+  CLOUD_RUN_SERVICE_NAME: notes-api
+  ARTIFACT_REGISTRY_REPO: notes-api-repo
+
+jobs:
+  deploy:
+    # Only run on main branch pushes or merged PRs
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.pull_request.merged == true)
+    
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for proper Git SHA
+    
+    - name: Set up environment variables
+      run: |
+        echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        echo "BUILD_ID=github-$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::8}" >> $GITHUB_ENV
+    
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        version: 'latest'
+    
+    - name: Configure Docker for Artifact Registry
+      run: |
+        gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+    
+    - name: Trigger Cloud Build
+      run: |
+        gcloud builds submit \
+          --config=cloudbuild.yaml \
+          --substitutions=_REGION=${{ env.GCP_REGION }},_REPOSITORY=${{ env.ARTIFACT_REGISTRY_REPO }},_TAG=${{ env.GIT_SHA }},_BUILD_ID=${{ env.BUILD_ID }} \
+          --timeout=1200s
+      env:
+        CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+    
+    - name: Deploy to Cloud Run
+      run: |
+        gcloud run deploy ${{ env.CLOUD_RUN_SERVICE_NAME }} \
+          --image=${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/notes-api:${{ env.GIT_SHA }} \
+          --platform=managed \
+          --region=${{ env.GCP_REGION }} \
+          --allow-unauthenticated \
+          --memory=512Mi \
+          --cpu=1 \
+          --concurrency=80 \
+          --min-instances=0 \
+          --max-instances=10 \
+          --set-env-vars="GOOGLE_CLOUD_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORT=8080,ENVIRONMENT=production" \
+          --service-account=notes-api-service@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+          --timeout=300 \
+          --quiet
+    
+    - name: Get Cloud Run URL
+      id: get-url
+      run: |
+        URL=$(gcloud run services describe ${{ env.CLOUD_RUN_SERVICE_NAME }} \
+          --region=${{ env.GCP_REGION }} \
+          --format='value(status.url)')
+        echo "SERVICE_URL=$URL" >> $GITHUB_OUTPUT
+        echo "Deployed to: $URL"
+    
+    - name: Verify deployment
+      run: |
+        echo "Waiting for service to be ready..."
+        sleep 30
+        
+        # Health check
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ steps.get-url.outputs.SERVICE_URL }}/health || echo "000")
+        
+        if [ "$HTTP_STATUS" = "200" ]; then
+          echo "✅ Deployment successful! Service is healthy."
+          echo "🚀 Service URL: ${{ steps.get-url.outputs.SERVICE_URL }}"
+        else
+          echo "❌ Health check failed with status: $HTTP_STATUS"
+          echo "Checking service logs..."
+          gcloud logs read --service=${{ env.CLOUD_RUN_SERVICE_NAME }} --limit=20
+          exit 1
+        fi
+    
+    - name: Output deployment info
+      run: |
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Service**: ${{ env.CLOUD_RUN_SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Region**: ${{ env.GCP_REGION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image Tag**: ${{ env.GIT_SHA }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Service URL**: ${{ steps.get-url.outputs.SERVICE_URL }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build ID**: ${{ env.BUILD_ID }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Deployed at**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  # Optional: Run on PRs for validation (without deployment)
+  validate:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Dart
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+    
+    - name: Install dependencies
+      run: dart pub get
+    
+    - name: Analyze code
+      run: dart analyze
+    
+    - name: Run tests
+      run: dart test
+    
+    - name: Validate Dockerfile
+      run: |
+        if [ -f Dockerfile ]; then
+          echo "✅ Dockerfile exists"
+        else
+          echo "❌ Dockerfile not found"
+          exit 1
+        fi
+    
+    - name: Validate Cloud Build config
+      run: |
+        if [ -f cloudbuild.yaml ]; then
+          echo "✅ Cloud Build configuration exists"
+        else
+          echo "❌ cloudbuild.yaml not found"
+          exit 1
+        fi
