@@ -53,6 +53,27 @@ resource "google_project_service" "cloud_resource_manager_api" {
   service = "cloudresourcemanager.googleapis.com"
 }
 
+resource "google_project_service" "artifact_registry_api" {
+  project = google_project.notes_project.project_id
+  service = "artifactregistry.googleapis.com"
+}
+
+resource "google_project_service" "cloud_build_api" {
+  project = google_project.notes_project.project_id
+  service = "cloudbuild.googleapis.com"
+}
+
+# Create Artifact Registry repository
+resource "google_artifact_registry_repository" "notes_api_repo" {
+  project       = google_project.notes_project.project_id
+  location      = var.region
+  repository_id = "notes-api-repo"
+  description   = "Docker repository for Notes API"
+  format        = "DOCKER"
+
+  depends_on = [google_project_service.artifact_registry_api]
+}
+
 # Create Firestore Database
 resource "google_firestore_database" "notes_database" {
   project     = google_project.notes_project.project_id
@@ -98,11 +119,23 @@ output "service_account_email" {
   value       = google_service_account.notes_api_sa.email
 }
 
+output "artifact_registry_repository" {
+  description = "The name of the Artifact Registry repository"
+  value       = google_artifact_registry_repository.notes_api_repo.name
+}
+
+output "docker_image_url" {
+  description = "The base URL for Docker images in Artifact Registry"
+  value       = "${var.region}-docker.pkg.dev/${google_project.notes_project.project_id}/${google_artifact_registry_repository.notes_api_repo.repository_id}"
+}
+
 output "next_steps" {
   description = "Next steps to configure your application"
   value = <<-EOT
     1. Update your .env file with: GOOGLE_CLOUD_PROJECT_ID=${google_project.notes_project.project_id}
     2. Authenticate your application: gcloud auth application-default login
-    3. Test your Dart application connection
+    3. Configure Docker for Artifact Registry: gcloud auth configure-docker ${var.region}-docker.pkg.dev
+    4. Test your Dart application connection
+    5. Build and push your Docker image using Cloud Build
   EOT
 }
