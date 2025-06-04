@@ -44,4 +44,3 @@ substitutions:
   _REGION: 'us-central1'
   _REPOSITORY: 'notes-api-repo'
   _TAG: 'manual-build'
-  _BUILD_ID: 'manual-build'
