@@ -77,26 +77,6 @@ enable_apis() {
     print_success "All required APIs enabled"
 }
 
-# Function to create service account
-create_service_account() {
-    local sa_name="github-actions-deploy"
-    local sa_email="${sa_name}@${PROJECT_ID}.iam.gserviceaccount.com"
-    
-    print_status "Creating service account: $sa_name"
-    
-    # Check if service account already exists
-    if gcloud iam service-accounts describe "$sa_email" --project="$PROJECT_ID" &>/dev/null; then
-        print_warning "Service account $sa_email already exists"
-    else
-        gcloud iam service-accounts create "$sa_name" \
-            --display-name="GitHub Actions Deployment" \
-            --description="Service account for GitHub Actions to deploy to Cloud Run" \
-            --project="$PROJECT_ID"
-        print_success "Service account created: $sa_email"
-    fi
-    
-    echo "$sa_email"
-}
 
 # Function to grant IAM roles
 grant_permissions() {
@@ -204,8 +184,32 @@ main() {
     get_project_id
     enable_apis
     
-    local sa_email
-    sa_email=$(create_service_account)
+    # Create service account with proper output handling
+    print_status "Setting up service account..."
+    
+    local sa_name="github-actions-deploy"
+    local sa_email="${sa_name}@${PROJECT_ID}.iam.gserviceaccount.com"
+    
+    print_status "Creating service account: $sa_name"
+    
+    # Check if service account already exists
+    if gcloud iam service-accounts describe "$sa_email" --project="$PROJECT_ID" &>/dev/null; then
+        print_warning "Service account $sa_email already exists"
+    else
+        gcloud iam service-accounts create "$sa_name" \
+            --display-name="GitHub Actions Deployment" \
+            --description="Service account for GitHub Actions to deploy to Cloud Run" \
+            --project="$PROJECT_ID" \
+            --quiet
+        print_success "Service account created: $sa_email"
+        
+        # Wait for service account to be fully created
+        print_status "Waiting for service account to be ready..."
+        sleep 5
+    fi
+    
+    print_status "Service account email: $sa_email"
+    
     grant_permissions "$sa_email"
     create_service_account_key "$sa_email"
     verify_setup

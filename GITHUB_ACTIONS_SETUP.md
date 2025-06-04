@@ -9,15 +9,38 @@ This guide will help you configure GitHub Actions for automatic deployment to Cl
 - [x] Terraform infrastructure deployed (from `terraform/` directory)
 - [x] `gcloud` CLI installed and authenticated
 
+## Quick Setup (Recommended)
+
+For a streamlined setup experience, use the automated script:
+
+```bash
+# Run the setup script
+./scripts/setup-github-actions.sh
+```
+
+If you encounter any errors during setup, first clean up and then retry:
+
+```bash
+# Step 1: Clean up any partial setup
+./scripts/cleanup-github-actions.sh
+
+# Step 2: Run the setup script again
+./scripts/setup-github-actions.sh
+```
+
+## Manual Setup (Alternative)
+
+If you prefer to set up manually or need to troubleshoot, follow these detailed steps:
+
 ## Step 1: Create Service Account for GitHub Actions
 
-First, create a dedicated service account for GitHub Actions deployments:
+Create a dedicated service account specifically for GitHub Actions deployments. This is separate from the `notes-api-service` account created by Terraform:
 
 ```bash
 # Set your project ID (replace with your actual project ID)
 export PROJECT_ID="your-project-id-here"
 
-# Create service account
+# Create GitHub Actions service account (separate from Terraform-managed one)
 gcloud iam service-accounts create github-actions-deploy \
     --display-name="GitHub Actions Deployment" \
     --description="Service account for GitHub Actions to deploy to Cloud Run" \
@@ -26,6 +49,8 @@ gcloud iam service-accounts create github-actions-deploy \
 # Get the service account email
 export SA_EMAIL="github-actions-deploy@${PROJECT_ID}.iam.gserviceaccount.com"
 ```
+
+**Note**: This creates a new service account specifically for GitHub Actions. Your existing `notes-api-service@PROJECT_ID.iam.gserviceaccount.com` created by Terraform will remain unchanged and is used by the running Cloud Run service.
 
 ## Step 2: Grant Required Permissions
 
@@ -148,31 +173,52 @@ git push origin main
 
 ### Common Issues and Solutions
 
-#### 1. Authentication Errors
+#### 1. Service Account Creation Error
+```
+ERROR: Invalid service account ([INFO] Creating service account: github-actions-deploy
+github-actions-deploy@project-id.iam.gserviceaccount.com).
+```
+**Solution**: This happens when output messages interfere with the service account email. Clean up and retry:
+```bash
+./scripts/cleanup-github-actions.sh
+./scripts/setup-github-actions.sh
+```
+
+#### 2. Authentication Errors
 ```
 Error: google: could not find default credentials
 ```
 **Solution**: Verify the `GCP_SA_KEY` secret is correctly base64 encoded.
 
-#### 2. Permission Denied Errors
+#### 3. Permission Denied Errors
 ```
 Error: Permission denied on resource project
 ```
 **Solution**: Ensure all IAM roles from Step 2 are granted to the service account.
 
-#### 3. Cloud Build Timeout
+#### 4. Cloud Build Timeout
 ```
 Error: Build timeout
 ```
 **Solution**: The build is taking longer than expected. Check Cloud Build logs in the GCP Console.
 
-#### 4. Health Check Failures
+#### 5. Health Check Failures
 ```
 Health check failed with status: 500
 ```
 **Solution**: Check Cloud Run logs:
 ```bash
 gcloud logs read --service=notes-api --limit=50 --project=$PROJECT_ID
+```
+
+#### 6. IAM Policy Binding Failures
+```
+ERROR: Policy modification failed
+```
+**Solution**: Wait a few seconds and retry, or clean up and start fresh:
+```bash
+./scripts/cleanup-github-actions.sh
+./scripts/setup-github-actions.sh
 ```
 
 ### Debugging Commands
